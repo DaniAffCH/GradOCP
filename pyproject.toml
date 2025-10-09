@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "GradOCP"
+version = "0.1.0"
+description = "A Python framework for Implicit Differentiation in Optimal Control Problems"
+authors = [
+    {name = "Daniele Affinita", email = "daniele.affinita@epfl.ch"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["optimal-control", "implicit-differentiation", "casadi", "python-framework"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
+
+dependencies = [
+    "numpy>=1.25",
+    "casadi>=3.6",
+    "matplotlib>=3.7"
+]
+
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "matplotlib"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/DaniAffCH/GradOCP"
+"Repository" = "https://github.com/DaniAffCH/GradOCP"
