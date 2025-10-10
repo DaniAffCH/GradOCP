@@ -10,8 +10,8 @@ def test_bilevel_convergence():
     y = ocp.add_parameter("y", size=1)
 
     N = 5
-    y_param = 0.1
-    lr = 0.001
+    y_param = 2.0
+    lr = 0.01
     for k in range(N-1):
         x_next = ocp.add_variable(f"x_{k+1}", size=1, lb=[0], ub=[400], stage=k+1)
         ocp.add_constraint(x_next - x - y, stage=k)

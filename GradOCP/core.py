@@ -19,7 +19,6 @@ class GradOCP:
         self._p = None
         self._g = None
         self._eps_eps_J_func = None
-        self._eps_J_func = None
         self._theta_eps_J_func = None
         self._lbx: List[float] = []
         self._ubx: List[float] = []
@@ -136,7 +135,6 @@ class GradOCP:
 
         H_J, grad_J = ca.hessian(self.obj, x)
         self._eps_eps_J_func = ca.Function("eps_eps_J", [x, p], [H_J])
-        self._eps_J_func = ca.Function("eps_J", [x, p], [grad_J])
         H_theta_J = ca.jacobian(grad_J, p)
         self._theta_eps_J_func = ca.Function("theta_eps_J", [x,p], [H_theta_J])
 
