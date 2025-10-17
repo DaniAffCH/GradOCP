@@ -14,8 +14,8 @@ class GradOCP:
     '''
     dynamics: Optional[SXOrMX]
     dynamics_fn: Optional[CasadiFunction]
-    _dynamics_jac_state: Optional[SXOrMX]
-    _dynamics_jac_state_fn: Optional[CasadiFunction]
+    _dynamics_jac_traj: Optional[SXOrMX]
+    _dynamics_jac_traj_fn: Optional[CasadiFunction]
     _dynamics_jac_params: Optional[SXOrMX]
     _dynamics_jac_params_fn: Optional[CasadiFunction]
     
@@ -25,15 +25,15 @@ class GradOCP:
 
     _stage_ineq_constr: List[SXOrMX]
     _stage_ineq_constr_fn: List[CasadiFunction]
-    _stage_ineq_constr_jac_state: List[SXOrMX]
-    _stage_ineq_constr_jac_state_fn: List[CasadiFunction]
+    _stage_ineq_constr_jac_traj: List[SXOrMX]
+    _stage_ineq_constr_jac_traj_fn: List[CasadiFunction]
     _stage_ineq_constr_jac_params: List[SXOrMX]
     _stage_ineq_constr_jac_params_fn: List[CasadiFunction]
     
     _stage_eq_constr: List[SXOrMX]
     _stage_eq_constr_fn: List[CasadiFunction]
-    _stage_eq_constr_jac_state: List[SXOrMX]
-    _stage_eq_constr_jac_state_fn: List[CasadiFunction]
+    _stage_eq_constr_jac_traj: List[SXOrMX]
+    _stage_eq_constr_jac_traj_fn: List[CasadiFunction]
     _stage_eq_constr_jac_params: List[SXOrMX]
     _stage_eq_constr_jac_params_fn: List[CasadiFunction]
 
@@ -94,8 +94,8 @@ class GradOCP:
     def __init__(self) -> None:
         self.dynamics = None
         self.dynamics_fn = None
-        self._dynamics_jac_state = None
-        self._dynamics_jac_state_fn = None
+        self._dynamics_jac_traj = None
+        self._dynamics_jac_traj_fn = None
         self._dynamics_jac_params = None
         self._dynamics_jac_params_fn = None
 
@@ -105,15 +105,15 @@ class GradOCP:
         
         self._stage_ineq_constr = []
         self._stage_ineq_constr_fn = []
-        self._stage_ineq_constr_jac_state = []
-        self._stage_ineq_constr_jac_state_fn = []
+        self._stage_ineq_constr_jac_traj = []
+        self._stage_ineq_constr_jac_traj_fn = []
         self._stage_ineq_constr_jac_params = []
         self._stage_ineq_constr_jac_params_fn = []
         
         self._stage_eq_constr = []
         self._stage_eq_constr_fn = []
-        self._stage_eq_constr_jac_state = []
-        self._stage_eq_constr_jac_state_fn = []
+        self._stage_eq_constr_jac_traj = []
+        self._stage_eq_constr_jac_traj_fn = []
         self._stage_eq_constr_jac_params = []
         self._stage_eq_constr_jac_params_fn = []
 
@@ -412,18 +412,18 @@ class GradOCP:
         
         for i, sec in enumerate(self._stage_eq_constr):
             j = ca.jacobian(sec, trajectory)
-            self._stage_eq_constr_jac_state.append(j)
-            self._stage_eq_constr_jac_state_fn.append(ca.Function(f"secjs_{i}" , [self.state, self.control, self.parameters], [j]))
+            self._stage_eq_constr_jac_traj.append(j)
+            self._stage_eq_constr_jac_traj_fn.append(ca.Function(f"secjs_{i}" , [self.state, self.control, self.parameters], [j]))
             
             j = ca.jacobian(sec, self.parameters)
             self._stage_eq_constr_jac_params.append(j)
             self._stage_eq_constr_jac_params_fn.append(ca.Function(f"secjp_{i}" , [self.state, self.control, self.parameters], [j]))
             
         for i, sic in enumerate(self._stage_ineq_constr):
-            # TODO: here I should also consider the state and control bounds 
+            # TODO: I should also consider the state and control bounds here 
             j = ca.jacobian(sic, trajectory)
-            self._stage_ineq_constr_jac_state.append(j)
-            self._stage_ineq_constr_jac_state_fn.append(ca.Function(f"sicjs_{i}" , [self.state, self.control, self.parameters], [j]))
+            self._stage_ineq_constr_jac_traj.append(j)
+            self._stage_ineq_constr_jac_traj_fn.append(ca.Function(f"sicjs_{i}" , [self.state, self.control, self.parameters], [j]))
             
             j = ca.jacobian(sic, self.parameters)
             self._stage_ineq_constr_jac_params.append(j)
@@ -439,7 +439,7 @@ class GradOCP:
             self._terminal_eq_constr_jac_params_fn.append(ca.Function(f"tecjp_{i}" , [self.state, self.parameters], [j]))
             
         for i, tic in enumerate(self._terminal_ineq_constr):
-            # TODO: here I should also consider the state and control bounds 
+            # TODO: I should also consider the state and control bounds here 
             j = ca.jacobian(tic, self.state)
             self._terminal_ineq_constr_jac_state.append(j)
             self._terminal_ineq_constr_jac_state_fn.append(ca.Function(f"ticjs_{i}" , [self.state, self.parameters], [j]))
@@ -449,8 +449,8 @@ class GradOCP:
             self._terminal_ineq_constr_jac_params_fn.append(ca.Function(f"ticjp_{i}" , [self.state, self.parameters], [j]))
             
         j = ca.jacobian(self.dynamics, trajectory)
-        self._dynamics_jac_state = j
-        self._dynamics_jac_state_fn = ca.Function("djs", [self.state, self.control, self.parameters], [j])
+        self._dynamics_jac_traj = j
+        self._dynamics_jac_traj_fn = ca.Function("djs", [self.state, self.control, self.parameters], [j])
         
         j = ca.jacobian(self.dynamics, self.parameters)
         self._dynamics_jac_params = j
@@ -470,7 +470,7 @@ class GradOCP:
         for i, siq in enumerate(self._stage_ineq_constr):
             self._stage_L += ca.dot(lambda_is[i], siq)
 
-        all_multipliers = [lambda_d] + lambda_es + lambda_is
+        all_multipliers = lambda_es + lambda_is + [lambda_d]
 
         self._stage_L_H, stage_L_grad = ca.hessian(self._stage_L, trajectory)
         self._stage_L_H_fn = ca.Function("sLH", [self.state, self.control, self.parameters] + all_multipliers, [self._stage_L_H])
@@ -503,9 +503,8 @@ class GradOCP:
         
         self._stack_variables()
         self._stack_constraints()
-        p = self.parameters
         
-        nlp = {"x": self._w, "p": p, "f": self._obj, "g": self._g}
+        nlp = {"x": self._w, "p": self.parameters, "f": self._obj, "g": self._g}
         opts = {} if solver_opts is None else solver_opts
         self._solver = ca.nlpsol("nlp_solver", solver_name, nlp, opts)
         
@@ -569,17 +568,121 @@ class GradOCP:
 
         return deepcopy(self._last_solution)
 
-    def backward(self, inversion_method: str = "pseudo") -> np.ndarray:
-        if not self._converged:
-            raise RuntimeError("Cannot compute backward derivatives: the last solve did not converge to a KKT-satisfying point.")
+    def _group_lambdas(self, lambda_t: np.ndarray, is_stage: bool) -> List[float]:
+        lambda_t_grouped = []
+        idx = 0
+        
+        eq_cstr = self._stage_eq_constr if is_stage else self._terminal_eq_constr
+        ineq_cstr = self._stage_ineq_constr if is_stage else self._terminal_ineq_constr
+        
+        for eq in eq_cstr:
+            lambda_t_grouped.append(lambda_t[idx : idx+eq.numel()])
+            idx += eq.numel()
+            
+        for ineq in ineq_cstr:
+            lambda_t_grouped.append(lambda_t[idx : idx+ineq.numel()])
+            idx += ineq.numel()
+        
+        if is_stage:
+            lambda_t_grouped.append(lambda_t[idx : idx+self.dynamics.numel()])
+            idx += self.dynamics.numel()
+        
+        assert idx == lambda_t.size, "[DEBUG] Something went wrong..."
+        
+        return lambda_t_grouped
 
+    def _build_block_idoc(self):
         p = self._last_solution["p"]
+        At = []
+        Bt = []
+        Ct = []
+        Ht = []
+        
         for t in range(self._last_horizon):
             xt = self._last_solution["state"][t]
             ut = self._last_solution["control"][t]
+            lambda_t = self._last_solution["lam_g_stage"][t]
+            lambda_t_grouped = self._group_lambdas(lambda_t, is_stage=True)
+            
+            Bt.append(self._stage_L_H_p_fn(xt, ut, p, *lambda_t_grouped))
+            Ht.append(self._stage_L_H_fn(xt, ut, p, *lambda_t_grouped))
+            
+            r_eps_t = []
+            r_p_t = []
+            
+            if self._stage_eq_constr:
+                r_eps_t += [f(xt, ut, p) for f in self._stage_eq_constr_jac_traj_fn]
+                r_p_t += [f(xt, ut, p) for f in self._stage_eq_constr_jac_params_fn]
+            
+            if self._stage_ineq_constr:
+                ne = len(self._stage_eq_constr)
+                ni = len(self._stage_ineq_constr)
+                lambda_t_ineq = lambda_t_grouped[ne : ne + ni]
+                for i in range(ni):
+                    ft = self._stage_ineq_constr_jac_traj_fn[i]
+                    fp = self._stage_ineq_constr_jac_params_fn[i]
+                    lambda_t_i = lambda_t_ineq[i]
+                    mask = np.abs(lambda_t_i) < self.tol
+                    r_eps_t += ft(xt, ut, p)[mask]
+                    r_p_t += fp(xt, ut, p)[mask]
+                    
+            r_eps_t.append(self._dynamics_jac_traj_fn(xt, ut, p))
+            r_p_t.append(self._dynamics_jac_params_fn(xt, ut, p))
+            
+            At.append(np.vstack(r_eps_t) if r_eps_t else np.array([]))
+            Ct.append(np.vstack(r_p_t) if r_p_t else np.array([]))
             
         xT = self._last_solution["state"][-1]
-    
+        lambda_T = self._last_solution["lam_g_terminal"]
+        lambda_T_grouped = self._group_lambdas(lambda_T, is_stage=False)
+        
+        BT = self._terminal_L_H_p_fn(xT, p, *lambda_T_grouped)
+        HT = self._terminal_L_H_fn(xT, p, *lambda_T_grouped)
+        
+        r_eps_T = []
+        r_p_T = []
+        
+        if self._terminal_eq_constr:
+            r_eps_T += [f(xT, p) for f in self._terminal_eq_constr_jac_state_fn]
+            r_p_T += [f(xT, p) for f in self._terminal_eq_constr_jac_params_fn]
+            
+        if self._terminal_ineq_constr:
+            ne = len(self._terminal_eq_constr)
+            ni = len(self._terminal_ineq_constr)
+            lambda_T_ineq = lambda_T_grouped[ne : ne + ni]
+            for i in range(ni):
+                ft = self._terminal_ineq_constr_jac_state_fn[i]
+                fp = self._terminal_ineq_constr_jac_params_fn[i]
+                lambda_T_i = lambda_T_ineq[i]
+                mask = np.abs(lambda_T_i) < self.tol
+                r_eps_T += ft(xT, p)[mask]
+                r_p_T += fp(xT, p)[mask]
+        
+        AT = np.vstack(r_eps_T) if r_eps_T else np.array([])
+        CT = np.vstack(r_p_T) if r_p_T else np.array([])
+        
+        return At, AT, Bt, BT, Ct, CT, Ht, HT
+
+    def backward(self, inversion_method: str = "pseudo") -> np.ndarray:
+        if not self._converged:
+            raise RuntimeError("Cannot compute sensitivity: the last solve did not converge to a KKT-satisfying point.")
+
+        inversion_methods = {
+            "exact": np.linalg.inv,
+            "pseudo": np.linalg.pinv,
+            "regularization": lambda x: np.linalg.inv(x + np.eye(x.shape[0]) * 1e-3),
+        }
+
+        inv = inversion_methods.get(inversion_method)
+        if inv is None:
+            raise ValueError(f"Unknown inversion method: {inversion_method}")
+
+        At, AT, Bt, BT, Ct, CT, Ht, HT = self._build_block_idoc()
+        
+        Hinv_t = inv(Ht)
+        Hinv_T = inv(HT)
+        
+
 ocp = GradOCP()
 dt = 1
 x,u,y = ca.SX.sym("x",2), ca.SX.sym("u",2), ca.SX.sym("y",2)
@@ -593,8 +696,8 @@ ocp.add_dynamics(x_next)
 
 ocp.add_terminal_cost(x[0]**2 + x[1]**2)
 
-ocp.build([0,0], 3)
+ocp.build([0,0], 3, solver_opts={"ipopt.print_level":0, "print_time":0, "ipopt.sb":"yes"})
 res = ocp.solve([100,100])
 
-pprint.pprint(res, width = 20)
+#pprint.pprint(res, width = 20)
 ocp.backward()
