@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any, Sequence, Union
 
 SXOrMX = Union[ca.SX, ca.MX]
 CasadiFunction = ca.Function
-
+CASADI_RETURN_OK = "Solve_Succeeded"
 class GradOCP:
     '''
     The dynamics is the only component not expressed in canonical form. This formulation allows expressing it with respect to the current state, yielding the state at time t+1. 
@@ -85,10 +85,10 @@ class GradOCP:
     _obj: Union[float, SXOrMX]
     
     _converged: bool
+    _last_horizon: int
+    tol: float
     
     _solver: CasadiFunction
-
-    tol: float
 
     def __init__(self) -> None:
         self.dynamics = None
@@ -166,6 +166,7 @@ class GradOCP:
         
         self._solver = None
         self._converged = False
+        self._last_horizon = None
 
         self.tol = 1e-8
 
@@ -418,7 +419,7 @@ class GradOCP:
             self._stage_eq_constr_jac_params_fn.append(ca.Function(f"secjp_{i}" , [self.state, self.control, self.parameters], [j]))
             
         for i, sic in enumerate(self._stage_ineq_constr):
-            # TODO: here I should consider anche the state and control bounds 
+            # TODO: here I should also consider the state and control bounds 
             j = ca.jacobian(sic, trajectory)
             self._stage_ineq_constr_jac_state.append(j)
             self._stage_ineq_constr_jac_state_fn.append(ca.Function(f"sicjs_{i}" , [self.state, self.control, self.parameters], [j]))
@@ -437,7 +438,7 @@ class GradOCP:
             self._terminal_eq_constr_jac_params_fn.append(ca.Function(f"tecjp_{i}" , [self.state, self.parameters], [j]))
             
         for i, tic in enumerate(self._terminal_ineq_constr):
-            # TODO: here I should consider anche the state and control bounds 
+            # TODO: here I should also consider the state and control bounds 
             j = ca.jacobian(tic, self.state)
             self._terminal_ineq_constr_jac_state.append(j)
             self._terminal_ineq_constr_jac_state_fn.append(ca.Function(f"ticjs_{i}" , [self.state, self.parameters], [j]))
@@ -454,26 +455,28 @@ class GradOCP:
         self._dynamics_jac_params = j
         self._dynamics_jac_params_fn = ca.Function("djp", [self.state, self.control, self.parameters], [j])
                     
+        sym_type = ca.SX if isinstance(self.state, ca.SX) else ca.MX
+        lambda_d = sym_type.sym("lambda_d", self.state.numel())
+        
+        lambda_es = [sym_type.sym(f"lambda_e_{i}", seq.numel()) for i, seq in enumerate(self._stage_eq_constr)]
+        lambda_is = [sym_type.sym(f"lambda_i_{i}", siq.numel()) for i, siq in enumerate(self._stage_ineq_constr)]
+
+        self._stage_L = ca.dot(lambda_d, self.dynamics)
         if self._stage_cost:
-            sym_type = ca.SX if isinstance(self._stage_cost, ca.SX) else ca.MX
-            lambda_d = sym_type.sym("lambda_d", self.state.numel())
-            
-            self._stage_L = self._stage_cost + ca.dot(lambda_d, self.dynamics) 
+            self._stage_L += self._stage_cost
+        for i, seq in enumerate(self._stage_eq_constr):
+            self._stage_L += ca.dot(lambda_es[i], seq)
+        for i, siq in enumerate(self._stage_ineq_constr):
+            self._stage_L += ca.dot(lambda_is[i], siq)
 
-            for i, seq in enumerate(self._stage_eq_constr):
-                lambda_e = sym_type.sym(f"lambda_e_{i}", seq.numel())
-                self._stage_L += ca.dot(lambda_e, seq) 
-                
-            for i, siq in enumerate(self._stage_ineq_constr):
-                lambda_i = sym_type.sym(f"lambda_i_{i}", siq.numel())
-                self._stage_L += ca.dot(lambda_i, siq) 
-                
-            self._stage_L_H, stage_L_grad = ca.hessian(self._stage_L, trajectory)
-            self._stage_L_H_fn = ca.Function("sLH", [self.state, self.control, self.parameters], [self._stage_L_H])
-            self._stage_L_H_p = ca.jacobian(stage_L_grad, self.parameters)
-            self._stage_L_H_p_fn = ca.Function("sLHp", [self.state, self.control, self.parameters], [self._stage_L_H_p])
+        all_multipliers = [lambda_d] + lambda_es + lambda_is
 
-        if self._terminal_cost:
+        self._stage_L_H, stage_L_grad = ca.hessian(self._stage_L, trajectory)
+        self._stage_L_H_fn = ca.Function("sLH", [self.state, self.control, self.parameters] + all_multipliers, [self._stage_L_H])
+        self._stage_L_H_p = ca.jacobian(stage_L_grad, self.parameters)
+        self._stage_L_H_p_fn = ca.Function("sLHp", [self.state, self.control, self.parameters] + all_multipliers, [self._stage_L_H_p])
+
+        if self._terminal_cost is not None:
             sym_type = ca.SX if isinstance(self._terminal_cost, ca.SX) else ca.MX
             
             self._terminal_L = self._terminal_cost
@@ -495,6 +498,7 @@ class GradOCP:
         assert horizon > 0, "Horizon must be positive"
         
         self._build_problem(initial_state, horizon)
+        self._last_horizon = horizon
         
         self._stack_variables()
         self._stack_constraints()
@@ -525,18 +529,36 @@ class GradOCP:
         res = self._solver(**arg)
                 
         # Check whether the KKT conditions hold.
-        self._converged = self._solver.stats()["return_status"] == "Solve_Succeeded"
+        self._converged = self._solver.stats()["return_status"] == CASADI_RETURN_OK
+
+        nx = self.state.numel()
+        nu = self.control.numel()
 
         x_opt = np.array(res["x"].full()).ravel()
+        N = (len(x_opt) - nx) // (nx + nu)
+
+        x_padded = np.concatenate([x_opt, np.full(nu, np.nan)])
+        x_arr = x_padded.reshape(N + 1, nx + nu)
+        x_states = x_arr[:, :nx]
+        x_control = x_arr[:, nx:]
+
         lam_g = np.array(res["lam_g"].full()).ravel() if "lam_g" in res else None
         lam_x = np.array(res["lam_x"].full()).ravel() if "lam_x" in res else None
 
-        self._last_solution = {"x": x_opt, "lam_g": lam_g, "lam_x": lam_x, "p": p_vals, "obj": res["f"]}
+        self._last_solution = {"x_raw": x_opt, "state": x_states, "control": x_control, "lam_g": lam_g, "lam_x": lam_x, "p": p_vals, "obj": res["f"]}
 
         return deepcopy(self._last_solution)
 
     def backward(self, inversion_method: str = "pseudo") -> np.ndarray:
-        pass
+        if not self._converged:
+            raise RuntimeError("Cannot compute backward derivatives: the last solve did not converge to a KKT-satisfying point.")
+
+        p = self._last_solution["p"]
+        for t in range(self._last_horizon):
+            xt = self._last_solution["state"][t]
+            ut = self._last_solution["control"][t]
+            
+        xT = self._last_solution["state"][-1]
     
 ocp = GradOCP()
 dt = 1
@@ -553,3 +575,4 @@ ocp.add_terminal_cost(x[0]**2 + x[1]**2)
 
 ocp.build([0,0], 3)
 ocp.solve([100,100])
+ocp.backward()
