@@ -2,6 +2,7 @@ import casadi as ca
 import numpy as np
 from copy import deepcopy
 from typing import List, Optional, Dict, Any, Sequence, Union
+import pprint
 
 SXOrMX = Union[ca.SX, ca.MX]
 CasadiFunction = ca.Function
@@ -540,12 +541,31 @@ class GradOCP:
         x_padded = np.concatenate([x_opt, np.full(nu, np.nan)])
         x_arr = x_padded.reshape(N + 1, nx + nu)
         x_states = x_arr[:, :nx]
-        x_control = x_arr[:, nx:]
+        x_control = x_arr[:-1, nx:]
 
         lam_g = np.array(res["lam_g"].full()).ravel() if "lam_g" in res else None
+        lam_g_stage = None
+        lam_g_terminal = None
+        
+        if lam_g is not None:
+            tcn = sum(teq.numel() for teq in self._terminal_eq_constr) + \
+                  sum(tiq.numel() for tiq in self._terminal_ineq_constr)
+            
+            lam_g_terminal = lam_g[-tcn:] if tcn > 0 else np.array([])
+            lam_g_stage = lam_g[:-tcn] if tcn > 0 else lam_g
+            lam_g_stage = lam_g_stage.reshape(N, -1)
+
         lam_x = np.array(res["lam_x"].full()).ravel() if "lam_x" in res else None
 
-        self._last_solution = {"x_raw": x_opt, "state": x_states, "control": x_control, "lam_g": lam_g, "lam_x": lam_x, "p": p_vals, "obj": res["f"]}
+        self._last_solution = {"x_raw": x_opt,
+                               "state": x_states,
+                               "control": x_control,
+                               "lam_g": lam_g,
+                               "lam_g_stage": lam_g_stage,
+                               "lam_g_terminal": lam_g_terminal,
+                               "lam_x": lam_x,
+                               "p": p_vals,
+                               "obj": res["f"]}
 
         return deepcopy(self._last_solution)
 
@@ -574,5 +594,7 @@ ocp.add_dynamics(x_next)
 ocp.add_terminal_cost(x[0]**2 + x[1]**2)
 
 ocp.build([0,0], 3)
-ocp.solve([100,100])
+res = ocp.solve([100,100])
+
+pprint.pprint(res, width = 20)
 ocp.backward()
